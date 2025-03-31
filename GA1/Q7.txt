@@ -1,2 +1,0 @@
-How many Wednesdays are there in the date range 1983-09-09 to 2016-02-04?
-
