@@ -5,6 +5,7 @@ import git
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from redis import Redis
 from sentence_transformers import SentenceTransformer
 
 # Constants
@@ -73,8 +74,17 @@ def execute_script(file_path):
 # Flask API
 app = Flask(__name__)
 
-# Rate limiter (5 requests per minute per user)
-limiter = Limiter(get_remote_address, app=app, default_limits=["5 per minute"])
+# Set up Redis connection for rate limiting
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = Redis.from_url(redis_url, decode_responses=True)
+
+# Rate limiter using Redis backend
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    storage_uri=redis_url,
+    default_limits=["5 per minute"]
+)
 
 @app.route("/api/", methods=["POST"])
 @limiter.limit("5 per minute")
