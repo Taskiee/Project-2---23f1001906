@@ -1,9 +1,11 @@
 import os
-import git
 import json
 import subprocess
-from sentence_transformers import SentenceTransformer
+import git
 from flask import Flask, request, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from sentence_transformers import SentenceTransformer
 
 # Constants
 REPO_URL = "https://github.com/Taskiee/Project-2---23f1001906"
@@ -11,16 +13,17 @@ LOCAL_PATH = "./repo"
 FOLDERS = ["GA1", "GA2"]
 EMBEDDINGS_FILE = "embeddings.json"
 
-# Clone the repository only once
+# Clone repo only if it doesn't exist
 if not os.path.exists(LOCAL_PATH):
     print("Cloning repository...")
-    git.Repo.clone_from(REPO_URL, LOCAL_PATH)
+    subprocess.run(["git", "clone", REPO_URL, LOCAL_PATH], check=True)
 else:
     print("Repository already exists.")
 
-# Load embedding model
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+# Load a lighter embedding model (uses less memory)
+embedding_model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
 
+# Function to extract question-answer pairs
 def extract_data():
     data = {}
     for folder in FOLDERS:
@@ -28,12 +31,11 @@ def extract_data():
         if os.path.exists(folder_path):
             for root, _, files in os.walk(folder_path):
                 for file in files:
-                    if file.endswith(".txt"):  # Extracting questions
+                    if file.endswith(".txt"):
                         q_path = os.path.join(root, file)
                         with open(q_path, "r", encoding="utf-8") as f:
                             question = f.read().strip()
                         
-                        # Find corresponding solution file
                         base_name = file.replace(".txt", "")
                         solution_file = None
                         for ext in [".py", ".sh"]:
@@ -41,12 +43,10 @@ def extract_data():
                                 solution_file = os.path.join(root, base_name + ext)
                                 break
                         
-                        # Store data
-                        data[question] = {
-                            "solution_file": solution_file
-                        }
+                        data[question] = {"solution_file": solution_file}
     return data
 
+# Generate embeddings and store in a file
 def generate_embeddings(data):
     embeddings = {}
     for question in data:
@@ -57,6 +57,7 @@ def generate_embeddings(data):
         }
     return embeddings
 
+# Execute a script file (.py or .sh)
 def execute_script(file_path):
     try:
         if file_path.endswith(".py"):
@@ -69,27 +70,24 @@ def execute_script(file_path):
     except Exception as e:
         return str(e)
 
-# API Server
+# Flask API
 app = Flask(__name__)
 
+# Rate limiter (5 requests per minute per user)
+limiter = Limiter(get_remote_address, app=app, default_limits=["5 per minute"])
+
 @app.route("/api/", methods=["POST"])
+@limiter.limit("5 per minute")
 def handle_request():
     question = request.form.get("question")
-    
     if not question:
         return jsonify({"error": "Question is required"}), 400
     
-    # Load embeddings or regenerate if missing
-    if not os.path.exists(EMBEDDINGS_FILE):
-        extracted_data = extract_data()
-        embeddings = generate_embeddings(extracted_data)
-        with open(EMBEDDINGS_FILE, "w") as f:
-            json.dump(embeddings, f, indent=4)
-    else:
-        with open(EMBEDDINGS_FILE, "r") as f:
-            embeddings = json.load(f)
-    
-    # Find closest question
+    # Load embeddings
+    with open(EMBEDDINGS_FILE, "r") as f:
+        embeddings = json.load(f)
+
+    # Find closest matching question
     input_embedding = embedding_model.encode(question).tolist()
     best_match = None
     best_similarity = -1
@@ -99,7 +97,7 @@ def handle_request():
         if similarity > best_similarity:
             best_similarity = similarity
             best_match = stored_question
-    
+
     if best_match and embeddings[best_match]["solution_file"]:
         solution_file = embeddings[best_match]["solution_file"]
         answer = execute_script(solution_file)
@@ -108,16 +106,16 @@ def handle_request():
     
     return jsonify({"answer": answer})
 
+# Initialize embeddings and start Flask server
 if __name__ == "__main__":
-    # Ensure Flask runs on the correct port for Railway
-    port = int(os.environ.get("PORT", 5000))
+    extracted_data = extract_data()
+    embeddings = generate_embeddings(extracted_data)
     
-    # Generate embeddings at startup if missing
-    if not os.path.exists(EMBEDDINGS_FILE):
-        extracted_data = extract_data()
-        embeddings = generate_embeddings(extracted_data)
-        with open(EMBEDDINGS_FILE, "w") as f:
-            json.dump(embeddings, f, indent=4)
+    with open(EMBEDDINGS_FILE, "w") as f:
+        json.dump(embeddings, f, indent=4)
     
     print("Embeddings saved to", EMBEDDINGS_FILE)
+
+    # Use dynamic port for Railway
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
