@@ -8,3 +8,4 @@ openai
 transformers
 torch
 flask-limiter
+redis
