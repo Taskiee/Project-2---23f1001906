@@ -180,8 +180,7 @@ def initialize_app():
     # Log sample data
     sample_q = next(iter(embeddings.items()))
     print(f"\nSample embedding:\nQuestion: {sample_q[0]}\nFile: {sample_q[1]['solution_file']}\nVector: {sample_q[1]['embedding'][:5]}...")
-Vector: {sample_q[1]['embedding'][:5]}..."
-
+    
 if __name__ == "__main__":
     initialize_app()
     port = int(os.environ.get("PORT", 8000))
