@@ -1,7 +1,6 @@
 import os
 import git
 import json
-import openai
 import subprocess
 from sentence_transformers import SentenceTransformer
 from flask import Flask, request, jsonify
@@ -12,13 +11,12 @@ LOCAL_PATH = "./repo"
 FOLDERS = ["GA1", "GA2"]
 EMBEDDINGS_FILE = "embeddings.json"
 
-# Clone the repo
-def clone_repo():
-    if os.path.exists(LOCAL_PATH):
-        print("Repository already cloned.")
-    else:
-        print("Cloning repository...")
-        git.Repo.clone_from(REPO_URL, LOCAL_PATH)
+# Clone the repository only once
+if not os.path.exists(LOCAL_PATH):
+    print("Cloning repository...")
+    git.Repo.clone_from(REPO_URL, LOCAL_PATH)
+else:
+    print("Repository already exists.")
 
 # Load embedding model
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -81,9 +79,15 @@ def handle_request():
     if not question:
         return jsonify({"error": "Question is required"}), 400
     
-    # Load embeddings
-    with open(EMBEDDINGS_FILE, "r") as f:
-        embeddings = json.load(f)
+    # Load embeddings or regenerate if missing
+    if not os.path.exists(EMBEDDINGS_FILE):
+        extracted_data = extract_data()
+        embeddings = generate_embeddings(extracted_data)
+        with open(EMBEDDINGS_FILE, "w") as f:
+            json.dump(embeddings, f, indent=4)
+    else:
+        with open(EMBEDDINGS_FILE, "r") as f:
+            embeddings = json.load(f)
     
     # Find closest question
     input_embedding = embedding_model.encode(question).tolist()
@@ -105,12 +109,15 @@ def handle_request():
     return jsonify({"answer": answer})
 
 if __name__ == "__main__":
-    clone_repo()
-    extracted_data = extract_data()
-    embeddings = generate_embeddings(extracted_data)
+    # Ensure Flask runs on the correct port for Railway
+    port = int(os.environ.get("PORT", 5000))
     
-    with open(EMBEDDINGS_FILE, "w") as f:
-        json.dump(embeddings, f, indent=4)
+    # Generate embeddings at startup if missing
+    if not os.path.exists(EMBEDDINGS_FILE):
+        extracted_data = extract_data()
+        embeddings = generate_embeddings(extracted_data)
+        with open(EMBEDDINGS_FILE, "w") as f:
+            json.dump(embeddings, f, indent=4)
     
     print("Embeddings saved to", EMBEDDINGS_FILE)
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=port)
