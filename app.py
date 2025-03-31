@@ -166,15 +166,21 @@ def health_check():
     })
 
 def initialize_app():
-    """Initialize application data"""
     clone_repository()
     data = extract_data()
+    print(f"Found {len(data)} question-answer pairs")
+    
     embeddings = generate_embeddings(data)
+    print(f"Generated embeddings for {len(embeddings)} questions")
     
     with open(EMBEDDINGS_FILE, "w") as f:
         json.dump(embeddings, f, indent=2)
+    print(f"Saved embeddings to {EMBEDDINGS_FILE}")
     
-    print(f"Initialized with {len(embeddings)} question-answer pairs")
+    # Log sample data
+    sample_q = next(iter(embeddings.items()))
+    print(f"\nSample embedding:\nQuestion: {sample_q[0]}\nFile: {sample_q[1]['solution_file']}\nVector: {sample_q[1]['embedding'][:5]}...")
+Vector: {sample_q[1]['embedding'][:5]}..."
 
 if __name__ == "__main__":
     initialize_app()
