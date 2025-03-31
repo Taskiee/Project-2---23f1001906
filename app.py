@@ -38,24 +38,32 @@ def clone_repository():
         subprocess.run(["git", "clone", REPO_URL, LOCAL_PATH], check=True)
 
 def extract_data():
-    """Extract question-answer pairs from repository"""
+    """Extract question-answer pairs from repository with _Q/_Ans naming"""
     data = {}
     for folder in FOLDERS:
         folder_path = os.path.join(LOCAL_PATH, folder)
         if os.path.exists(folder_path):
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    if file.endswith(".txt"):
-                        q_path = os.path.join(root, file)
-                        with open(q_path, "r", encoding="utf-8") as f:
-                            question = f.read().strip()
-                        
-                        base_name = os.path.splitext(file)[0]
-                        for ext in [".py", ".sh"]:
-                            solution_file = os.path.join(root, f"{base_name}{ext}")
-                            if os.path.exists(solution_file):
-                                data[question] = {"solution_file": solution_file}
-                                break
+            # Get all question files (XX_Q.txt)
+            q_files = [f for f in os.listdir(folder_path) if f.endswith('_Q.txt')]
+            
+            for q_file in q_files:
+                # Extract base number (e.g., "01" from "01_Q.txt")
+                base_num = q_file.split('_')[0]
+                q_path = os.path.join(folder_path, q_file)
+                
+                # Read question text
+                with open(q_path, "r", encoding="utf-8") as f:
+                    question = f.read().strip()
+                
+                # Find matching answer file (XX_Ans.*)
+                ans_files = [f for f in os.listdir(folder_path) 
+                           if f.startswith(f"{base_num}_Ans.")]
+                
+                if ans_files:
+                    solution_file = os.path.join(folder_path, ans_files[0])
+                    data[question] = {"solution_file": solution_file}
+                else:
+                    print(f"Warning: No answer file found for {q_file}")
     return data
 
 def generate_embeddings(data):
@@ -72,22 +80,32 @@ def generate_embeddings(data):
 def execute_script(file_path):
     """Execute a script file and return output"""
     try:
-        if file_path.endswith(".py"):
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        if file_ext == '.py':
             result = subprocess.run(
                 ["python", file_path],
                 capture_output=True,
                 text=True,
                 check=True
             )
-        elif file_path.endswith(".sh"):
+        elif file_ext == '.sh':
             result = subprocess.run(
                 ["bash", file_path],
                 capture_output=True,
                 text=True,
                 check=True
             )
+        elif file_ext == '.js':
+            result = subprocess.run(
+                ["node", file_path],
+                capture_output=True,
+                text=True,
+                check=True
+            )
         else:
-            return "Unsupported file type"
+            return f"Unsupported file type: {file_ext}"
+        
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         return f"Error: {e.stderr.strip()}"
@@ -134,7 +152,8 @@ def handle_request():
         return jsonify({
             "question": best_match,
             "answer": answer,
-            "similarity_score": best_similarity
+            "similarity_score": best_similarity,
+            "solution_file": os.path.basename(solution_file)
         })
     return jsonify({"error": "No matching solution found"}), 404
 
