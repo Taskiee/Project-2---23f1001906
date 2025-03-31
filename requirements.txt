@@ -1,4 +1,9 @@
 flask
 gitpython
 sentence-transformers
+gunicorn
+requests
+python-dotenv
 openai
+transformers
+torch
